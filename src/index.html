@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Hangouts archive consult</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" type="text/css" href="lib/bootstrap.css" >
+        <script src="lib/jquery.js"></script>
+        <script src="lib/handlebars.js"></script>
+        <script src="lib/bootstrap.js"></script>
+        <script src="lib/md5.min.js"></script>
+        <script type="text/javascript">
+            var idToHslCssString = function(googleid){
+                var h = parseInt(md5(googleid), 16) % 360;
+                return 'hsl('+h+', 60%, 50%)';
+            };
+            
+            Handlebars.registerHelper('color', function(id){
+                return idToHslCssString(id);
+            });
+            
+            
+            $(document).ready(function() {
+                var fileInput = $('#fileSelection');
+                var result = $('#hangoutsList');
+                var hangoutsTemplate = Handlebars.compile($("#hangouts-template").html());
+                var hangoutTemplate = Handlebars.compile($("#hangout-template").html());
+                fileInput.bind('change', function (e) {
+                    var file = e.target.files[0];
+                    var reader = new FileReader();
+                    reader.onload = function (e) {
+                        hangoutsData = JSON.parse(reader.result);
+                        result.html(hangoutsTemplate(hangoutsData.conversation_state));
+                        $('.hangout').click(function(e){
+                            var id = e.currentTarget.dataset.conversationid;
+                            var conversation = hangoutsData.conversation_state.filter(function(c){ return c.conversation_id.id === id; })[0];
+                            var participants = {};
+                            conversation.conversation_state.conversation.participant_data.forEach(function(p){
+                                participants[p.id.chat_id] = p.fallback_name;
+                            });
+                            var events = conversation.conversation_state.event;
+                            events.sort(function(l,r){ return r.timestamp - l.timestamp;});
+                            var messages = events
+                                    .filter(function(e){ return e.event_type === 'REGULAR_CHAT_MESSAGE';})
+                                    .map(function(e){
+                                        var text = (e.chat_message.message_content.segment || []).map(function(s){ return s.text;}).join('\n');
+                                        // support only photo attachments
+                                        var images = (e.chat_message.message_content.attachment || [])
+                                                .filter(function(ei){ return ei.hasOwnProperty('embeds.PlusPhoto.plus_photo');})
+                                                .map(function(ei){ return ei['embeds.PlusPhoto.plus_photo'].url;});
+                                        return {
+                                            text: text,
+                                            timestamp: new Date(+(""+e.timestamp).slice(0, -3)).toLocaleString(),
+                                            sender: participants[e.sender_id.chat_id],
+                                            images: images
+                                        };
+                                    });
+                            $('#conversation').html(hangoutTemplate(messages));
+                        });
+                    };
+                    reader.readAsText(file);
+                });
+                
+            });
+        </script>
+        <style type="text/css">
+            body {
+                padding: 20px;
+            }
+            .hangout {
+                cursor: pointer;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container" >
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="row">
+                        <div class="col-md-12">
+                        <div class="panel panel-default conversation">
+                        <div class="panel-body">
+                            <form role="form">
+                                <div class="form-group">
+                                    <input type="file" id="fileSelection">
+                                </div>
+                            </form>
+                        </div>
+                        </div>
+                        </div>
+                    </div>
+                    <div id="hangoutsList">
+                    </div>
+                </div>
+                <div class="col-md-9">
+                    <div class="row">
+                        <div class="col-md-12">
+                        <div class="panel panel-default conversation">
+                        <div class="panel-body media">
+                        <div class="media-body" id="conversation">
+                        </div>
+                        </div>
+                        </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script id="hangouts-template" type="text/x-handlebars-template">
+            {{#unless this}}
+            <div class="row">
+            <div class="col-md-12">
+            <div class="panel panel-danger">
+            <div class="panel-body">No hangouts</div>
+            </div>
+            </div>
+            </div>
+            {{/unless}}
+            {{#each this}}
+            <div class="row">
+            <div class="col-md-12">
+            <div class="panel panel-default hangout" id="{{conversation_id.id}}" data-conversationId="{{conversation_id.id}}">
+            <div class="panel-body media">
+            <div class="media-body">
+                {{#each conversation_state.conversation.participant_data}}
+                <h4 class="media-heading">{{fallback_name}}</h4>
+                {{/each}}
+            </div>
+            </div>
+            </div>
+            </div>
+            </div>
+            {{/each}}
+        </script>
+
+        <script id="hangout-template" type="text/x-handlebars-template">
+            {{#unless this}}
+            <div class="panel-body">No messages</div>
+            {{/unless}}
+            {{#each this}}
+            <p>
+            <span style="color: {{color sender}}">[{{timestamp}}][{{sender}}]</span>: {{text}}
+            </p>
+                {{#each images}}
+                    <img src="{{url}}"></img>
+                {{/each}}
+            {{/each}}
+        </script>
+
+    </body>
+</html>
